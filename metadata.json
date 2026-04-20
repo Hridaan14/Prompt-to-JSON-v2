@@ -1,0 +1,6 @@
+{
+  "name": " Prompt to JSON",
+  "description": "Gemini 3.1 takes your short image or video prompts and transforms them into detailed JSONs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
