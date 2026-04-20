@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
     // Generate JSON Extractor response
     const promptResponse = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-1.5-flash',
       contents: { parts },
       config: {
         systemInstruction,
