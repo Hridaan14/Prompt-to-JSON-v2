@@ -32,16 +32,46 @@ export async function POST(req: Request) {
 
     const systemInstruction = isVideo ? EXTRACT_VIDEO_PROMPT : EXTRACT_IMAGE_PROMPT;
 
-    // Generate JSON Extractor response
-    const promptResponse = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
-      contents: { parts },
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        temperature: 0.1,
+    // Bulletproof Auto-Fallback Logic for high demand 503s AND Quota Limits
+    const modelsToTry = [
+      'gemini-3-flash-preview',
+      'gemini-3.1-flash-lite-preview',
+      'gemini-3.1-pro-preview' 
+    ];
+
+    let promptResponse;
+    let lastError;
+
+    for (const modelName of modelsToTry) {
+      try {
+        promptResponse = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts },
+          config: {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            temperature: 0.1,
+          }
+        });
+        break; // Success! Break out of the loop.
+      } catch (err: any) {
+        lastError = err;
+        const msg = err.message ? err.message.toLowerCase() : JSON.stringify(err).toLowerCase();
+        
+        // If Google's server is overloaded (503) OR we hit a quota limit (429), try the next model silently!
+        if (msg.includes('503') || msg.includes('unavailable') || msg.includes('overloaded') || msg.includes('429') || msg.includes('quota') || msg.includes('resource_exhausted')) {
+          console.warn(`[Fallback] ${modelName} failed (${msg.includes('429')||msg.includes('quota') ? 'Quota' : 'Busy'}). Trying next model...`);
+          continue; 
+        }
+        
+        // Stop immediately on legitimate formatting errors (400)
+        throw err;
       }
-    });
+    }
+
+    if (!promptResponse) {
+      throw lastError || new Error("All Gemini models are currently overloaded. Please try again in a few minutes.");
+    }
 
     let jsonStr = promptResponse.text || '{}';
     
@@ -76,12 +106,6 @@ export async function POST(req: Request) {
     }
 
     const errorMsg = error.message ? error.message : JSON.stringify(error);
-    
-    if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
-      return NextResponse.json({ 
-        error: "Slow down! 🛑 You hit the speed limit. Please wait about 30 seconds." 
-      }, { status: 429 });
-    }
 
     return NextResponse.json({ error: `Backend Error: ${errorMsg} | Debug: ${debugInfo}` }, { status: 500 });
   }
